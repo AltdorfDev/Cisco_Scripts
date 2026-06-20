@@ -1,0 +1,36 @@
+---
+- name: Backup de running-config en control node con copy
+  hosts: routers
+  gather_facts: false
+  vars_files:
+    - Backups/group_vars/all/vault.yml
+  vars:
+    ts: "{{ lookup('pipe', 'date +%Y-%m-%d-%H-%M-%S') }}"
+  tasks:
+    - name: Ejecutar "show running-config"
+      cisco.ios.ios_command:
+        commands: show running-config
+      register: run_cfg
+ 
+    # Busca backups anteriores de ESTE router (cualquier timestamp) para borrarlos
+    # antes de crear el nuevo, asi solo queda 1 archivo por router.
+    - name: Buscar backups anteriores de este router
+      ansible.builtin.find:
+        paths: "{{ playbook_dir }}/Backups"
+        patterns: "{{ inventory_hostname }}-*.txt"
+      register: backups_anteriores
+      delegate_to: localhost
+ 
+    - name: Borrar backups anteriores de este router
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ backups_anteriores.files }}"
+      delegate_to: localhost
+ 
+    - name: Guardar salida en Backups/<host>-<dia-hora>.txt (local)
+      ansible.builtin.copy:
+        content: "{{ run_cfg.stdout[0] | default('') }}"
+        dest: "{{ playbook_dir }}/Backups/{{ inventory_hostname }}-{{ ts }}.txt"
+        mode: '0644'
+      delegate_to: localhost
